@@ -1009,6 +1009,67 @@ namespace io{
 		}
 
 	private:
+
+		template<size_t r, typename... Args>
+        typename std::enable_if<r < sizeof...(Args), void>::type
+		tuple_parse_helper(std::tuple<Args...>& tuple){
+			if(row[r]){
+				try{
+					try{
+						row[r] = row[r];
+                        auto& v = std::get<r>(tuple);
+						io::detail::parse<overflow_policy>(row[r], v);
+					}catch(error::with_column_content&err){
+						err.set_column_content(row[r]);
+						throw;
+					}
+				}catch(error::with_column_name&err){
+					err.set_column_name(column_names[r].c_str());
+					throw;
+				}
+			}
+            tuple_parse_helper<r+1, Args...>(tuple);
+		}
+
+		template<size_t r, typename... Args>
+        typename std::enable_if<r == sizeof...(Args), void>::type
+		tuple_parse_helper(std::tuple<Args...>& tuple){}
+
+	public:
+		template<typename... Args>
+		bool read_tuple_row(std::tuple<Args...>& tuple){
+            static const auto TUPLE_SIZE = sizeof...(Args);
+			static_assert(TUPLE_SIZE>=column_count, 
+				"not enough columns specified");
+			static_assert(TUPLE_SIZE<=column_count, 
+				"too many columns specified");
+			try{
+				try{
+
+					char*line;
+					do{
+						line = in.next_line();
+						if(!line)
+							return false;
+					}while(comment_policy::is_comment(line));
+
+					detail::parse_line<trim_policy, quote_policy>
+						(line, row, col_order);
+
+					tuple_parse_helper<0, Args...>(tuple);
+				}catch(error::with_file_name&err){
+					err.set_file_name(in.get_truncated_file_name());
+					throw;
+				}
+			}catch(error::with_file_line&err){
+				err.set_file_line(in.get_file_line());
+				throw;
+			}
+
+			return true;
+		}
+
+	private:
 		void parse_helper(std::size_t r){}
 
 		template<class T, class ...ColType>
@@ -1066,4 +1127,3 @@ namespace io{
 	};
 }
 #endif
-
